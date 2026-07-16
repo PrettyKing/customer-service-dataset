@@ -1,0 +1,19 @@
+# macOS
+.DS_Store
+
+# Exported and quantized model files
+*.gguf
+
+# Fused full-model directories
+qwen-customer-service-merged/
+qwen-customer-service-merged-f16/
+
+# Python and training caches
+__pycache__/
+*.py[cod]
+.cache/
+
+# Logs and temporary files
+*.log
+*.tmp
+*.swp
