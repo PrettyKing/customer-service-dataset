@@ -1,4 +1,4 @@
-import type { ChatMessage, MastraResponse, Shipment } from "../types";
+import type { KnowledgeSource, MastraResponse, Shipment } from "../types";
 
 
 const API_URL = (import.meta.env.VITE_MASTRA_API_URL || "/mastra").replace(/\/$/, "");
@@ -11,6 +11,16 @@ function extractShipment(response: MastraResponse): Shipment | undefined {
       if (toolResult.payload?.toolName === "logisticsTool" && shipment) {
         return shipment;
       }
+    }
+  }
+  return undefined;
+}
+
+function extractSources(response: MastraResponse): KnowledgeSource[] | undefined {
+  for (const step of response.steps ?? []) {
+    for (const toolResult of step.toolResults ?? []) {
+      const sources = toolResult.payload?.result?.sources;
+      if (toolResult.payload?.toolName === "knowledgeTool" && sources?.length) return sources;
     }
   }
   return undefined;
@@ -30,18 +40,16 @@ export async function checkAgent(): Promise<boolean> {
 }
 
 export async function sendToAgent(
-  history: ChatMessage[],
+  prompt: string,
+  session: { resource: string; thread: string },
   signal?: AbortSignal
-): Promise<{ text: string; shipment?: Shipment }> {
-  const messages = history
-    .filter((message) => !message.failed)
-    .map((message) => ({ role: message.role, content: message.content }));
-
+): Promise<{ text: string; shipment?: Shipment; sources?: KnowledgeSource[] }> {
   const response = await fetch(`${API_URL}/agents/${AGENT_ID}/generate`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      messages,
+      messages: [{ role: "user", content: prompt }],
+      memory: session,
       maxSteps: 5,
       modelSettings: { temperature: 0.2, maxTokens: 320 }
     }),
@@ -56,5 +64,5 @@ export async function sendToAgent(
   if (!result.text?.trim()) {
     throw new Error("Agent 没有返回可显示的内容");
   }
-  return { text: result.text, shipment: extractShipment(result) };
+  return { text: result.text, shipment: extractShipment(result), sources: extractSources(result) };
 }

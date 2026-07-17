@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 
 from fastapi.testclient import TestClient
 
@@ -49,6 +50,41 @@ def test_chat_and_openai_compatible_endpoint():
         assert response.status_code == 200
         assert response.json()["object"] == "chat.completion"
         assert response.json()["usage"]["total_tokens"] == 22
+
+
+def test_openai_streaming_endpoint():
+    app = create_app(make_settings(), FakeModelService())
+    body = {
+        "messages": [{"role": "user", "content": "我的订单什么时候发货？"}],
+        "stream": True,
+        "stream_options": {"include_usage": True},
+        "tools": [{
+            "type": "function",
+            "function": {
+                "name": "query-logistics",
+                "description": "查询物流",
+                "parameters": {"type": "object"},
+            },
+        }],
+    }
+    with TestClient(app) as client:
+        with client.stream("POST", "/v1/chat/completions", json=body) as response:
+            assert response.status_code == 200
+            assert response.headers["content-type"].startswith("text/event-stream")
+            payload = "".join(response.iter_text())
+
+    events = [line.removeprefix("data: ") for line in payload.splitlines() if line.startswith("data: ")]
+    assert events[-1] == "[DONE]"
+    chunks = [json.loads(event) for event in events[:-1]]
+    assert all(chunk["object"] == "chat.completion.chunk" for chunk in chunks)
+    text = "".join(
+        chunk["choices"][0]["delta"].get("content", "")
+        for chunk in chunks
+        if chunk["choices"]
+    )
+    assert text == "您好，请提供订单号，我马上为您查询。"
+    assert chunks[-1]["choices"] == []
+    assert chunks[-1]["usage"]["total_tokens"] == 22
 
 
 def test_api_key_and_validation():

@@ -4,14 +4,16 @@
   "private": true,
   "packageManager": "pnpm@10.12.1",
   "scripts": {
-    "dev": "concurrently --kill-others-on-fail --names QLORA,LOGISTICS,AGENTS,FRONTEND --prefix-colors magenta,blue,yellow,green \"pnpm dev:qlora\" \"pnpm dev:logistics\" \"pnpm dev:agents\" \"pnpm dev:frontend\"",
+    "dev": "concurrently --kill-others-on-fail --names QLORA,RAG,LOGISTICS,AGENTS,FRONTEND --prefix-colors magenta,cyan,blue,yellow,green \"pnpm dev:qlora\" \"pnpm dev:rag\" \"pnpm dev:logistics\" \"pnpm dev:agents\" \"pnpm dev:frontend\"",
     "dev:qlora": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./customer-http-qlora/scripts/start.ps1",
+    "dev:rag": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./customer-rag-api/scripts/start.ps1",
     "dev:logistics": "pnpm --filter customer-frontend-logistics-api dev",
     "dev:agents": "pnpm --filter customer-agents dev",
     "dev:frontend": "pnpm --filter customer-frontend dev",
     "build": "pnpm --recursive --if-present build",
     "typecheck": "pnpm --recursive --if-present typecheck",
-    "test": "pnpm --recursive --if-present test"
+    "test": "pnpm --recursive --if-present test && pnpm test:rag",
+    "test:rag": "cd customer-rag-api && \".\\.venv\\Scripts\\python.exe\" -m pytest -q"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"

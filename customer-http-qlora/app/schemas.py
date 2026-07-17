@@ -75,6 +75,7 @@ class OpenAIChatRequest(ChatRequest):
     max_completion_tokens: int | None = Field(default=None, ge=1, le=2048)
     tools: list[ToolDefinition] | None = None
     tool_choice: str | dict[str, Any] | None = None
+    stream_options: dict[str, Any] | None = None
 
     @model_validator(mode="after")
     def use_openai_max_tokens(self) -> "OpenAIChatRequest":

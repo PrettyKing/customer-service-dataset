@@ -1,5 +1,6 @@
 node_modules/
 .mastra/
+.data/
 .env
 dist/
 *.log

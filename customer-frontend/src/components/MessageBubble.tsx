@@ -43,6 +43,13 @@ export function MessageBubble({ message, onRetry }: MessageBubbleProps) {
           )}
         </div>
         {message.shipment && <ShipmentCard shipment={message.shipment} />}
+        {message.sources && message.sources.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {[...new Map(message.sources.map((source) => [source.documentId, source])).values()].map((source) => (
+              <span key={source.documentId} className="rounded-full border border-ink/10 bg-white px-3 py-1 text-[10px] text-ink/45">参考 · {source.title}</span>
+            ))}
+          </div>
+        )}
         <p className={`mt-1.5 px-1 text-[10px] text-ink/30 ${isUser ? "text-right" : "text-left"}`}>{time}</p>
       </div>
     </div>

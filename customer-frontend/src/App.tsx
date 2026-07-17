@@ -1,11 +1,14 @@
-import { Headphones, Inbox, LayoutGrid, MessageSquareText, PackageSearch, Plus, Settings2, Sparkles, TicketCheck } from "lucide-react";
+import { Headphones, LayoutGrid, MessageSquareText, PackageSearch, Plus, Settings2, Sparkles } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Composer } from "./components/Composer";
+import { ConversationList } from "./components/ConversationList";
+import { KnowledgeManager } from "./components/KnowledgeManager";
 import { MessageBubble } from "./components/MessageBubble";
 import { StatusBadge } from "./components/StatusBadge";
+import { createConversation, deleteConversation, getConversation, listConversations, renameConversation } from "./lib/conversations";
 import { checkAgent, sendToAgent } from "./lib/mastra";
-import type { ChatMessage } from "./types";
+import type { ChatMessage, ConversationDetail, ConversationSummary } from "./types";
 
 
 const starterMessage: ChatMessage = {
@@ -26,14 +29,69 @@ function createMessage(role: "user" | "assistant", content: string): ChatMessage
   return { id: crypto.randomUUID(), role, content, createdAt: new Date() };
 }
 
+function persistentId(key: string): string {
+  const existing = window.localStorage.getItem(key);
+  if (existing) return existing;
+  const value = crypto.randomUUID();
+  window.localStorage.setItem(key, value);
+  return value;
+}
+
+function welcomeMessage(): ChatMessage {
+  return { ...starterMessage, id: crypto.randomUUID(), createdAt: new Date() };
+}
+
+function restoredMessages(detail: ConversationDetail): ChatMessage[] {
+  if (!detail.messages.length) return [welcomeMessage()];
+  return detail.messages.map((message) => ({
+    ...message,
+    createdAt: new Date(message.createdAt)
+  }));
+}
+
+function titleFromPrompt(prompt: string): string {
+  const normalized = prompt.replace(/\s+/g, " ").trim();
+  return normalized.length > 24 ? `${normalized.slice(0, 24)}…` : normalized;
+}
+
 export default function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([starterMessage]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [online, setOnline] = useState<boolean | null>(null);
   const [lastPrompt, setLastPrompt] = useState("");
+  const [view, setView] = useState<"chat" | "knowledge">("chat");
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [session, setSession] = useState(() => ({
+    resource: persistentId("customer-service-resource"),
+    thread: persistentId("customer-service-thread")
+  }));
   const endRef = useRef<HTMLDivElement>(null);
   const controllerRef = useRef<AbortController | null>(null);
+
+  const refreshConversations = useCallback(async () => {
+    const items = await listConversations(session.resource);
+    setConversations(items);
+    return items;
+  }, [session.resource]);
+
+  const openConversation = useCallback(async (threadId: string) => {
+    controllerRef.current?.abort();
+    setLoading(false);
+    setHistoryLoading(true);
+    setView("chat");
+    try {
+      const detail = await getConversation(session.resource, threadId);
+      setMessages(restoredMessages(detail));
+      window.localStorage.setItem("customer-service-thread", threadId);
+      setSession((current) => ({ ...current, thread: threadId }));
+    } catch {
+      // Preserve the currently displayed conversation when restoration fails.
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [session.resource]);
 
   useEffect(() => {
     let active = true;
@@ -47,6 +105,29 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    let active = true;
+    const restore = async () => {
+      setHistoryLoading(true);
+      try {
+        const items = await listConversations(session.resource);
+        if (!active) return;
+        setConversations(items);
+        const current = items.find((item) => item.id === session.thread);
+        if (current) {
+          const detail = await getConversation(session.resource, current.id);
+          if (active) setMessages(restoredMessages(detail));
+        }
+      } catch {
+        // The availability badge reports connectivity; keep the chat usable here.
+      } finally {
+        if (active) setHistoryLoading(false);
+      }
+    };
+    void restore();
+    return () => { active = false; };
+  }, [session.resource]);
+
+  useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
@@ -54,19 +135,30 @@ export default function App() {
     const text = prompt.trim();
     if (!text || loading) return;
     const userMessage = createMessage("user", text);
-    const nextHistory = [...messages.filter((message) => !message.failed), userMessage];
     setMessages((current) => [...current, userMessage]);
     setInput("");
     setLastPrompt(text);
     setLoading(true);
     controllerRef.current = new AbortController();
     try {
-      const result = await sendToAgent(nextHistory, controllerRef.current.signal);
+      const existing = conversations.find((conversation) => conversation.id === session.thread);
+      const firstUserMessage = !messages.some((message) => message.role === "user");
+      if (!existing) {
+        const created = await createConversation(session.resource, {
+          threadId: session.thread,
+          title: titleFromPrompt(text)
+        });
+        setConversations((current) => [created, ...current.filter((item) => item.id !== created.id)]);
+      } else if (firstUserMessage && existing.title === "新会话") {
+        await renameConversation(session.resource, session.thread, titleFromPrompt(text));
+      }
+      const result = await sendToAgent(text, session, controllerRef.current.signal);
       setMessages((current) => [
         ...current,
-        { ...createMessage("assistant", result.text), shipment: result.shipment }
+        { ...createMessage("assistant", result.text), shipment: result.shipment, sources: result.sources }
       ]);
       setOnline(true);
+      void refreshConversations().catch(() => undefined);
     } catch (error) {
       const reason = error instanceof Error ? error.message : "未知错误";
       setMessages((current) => [
@@ -78,33 +170,70 @@ export default function App() {
       setLoading(false);
       controllerRef.current = null;
     }
-  }, [loading, messages]);
+  }, [conversations, loading, messages, refreshConversations, session]);
 
-  const resetChat = () => {
+  const resetChat = async () => {
     controllerRef.current?.abort();
-    setMessages([{ ...starterMessage, id: crypto.randomUUID(), createdAt: new Date() }]);
     setInput("");
     setLoading(false);
+    let thread: string = crypto.randomUUID();
+    try {
+      const created = await createConversation(session.resource, { threadId: thread });
+      thread = created.id;
+      setConversations((current) => [created, ...current.filter((item) => item.id !== thread)]);
+    } catch {
+      // The generated thread can still be created automatically on the first Agent request.
+    }
+    setMessages([welcomeMessage()]);
+    window.localStorage.setItem("customer-service-thread", thread);
+    setSession((current) => ({ ...current, thread }));
+    setView("chat");
+  };
+
+  const renameHistory = async (threadId: string, title: string) => {
+    await renameConversation(session.resource, threadId, title);
+    await refreshConversations();
+  };
+
+  const deleteHistory = async (threadId: string) => {
+    await deleteConversation(session.resource, threadId);
+    const remaining = conversations.filter((item) => item.id !== threadId);
+    setConversations(remaining);
+    if (threadId !== session.thread) return;
+    if (remaining.length) {
+      await openConversation(remaining[0].id);
+    } else {
+      const thread = crypto.randomUUID();
+      window.localStorage.setItem("customer-service-thread", thread);
+      setSession((current) => ({ ...current, thread }));
+      setMessages([welcomeMessage()]);
+    }
   };
 
   return (
     <div className="min-h-screen bg-paper text-ink lg:h-screen lg:overflow-hidden">
-      <div className="grid min-h-screen lg:h-screen lg:grid-cols-[224px_minmax(0,1fr)] xl:grid-cols-[224px_minmax(0,1fr)_288px]">
+      <div className={`grid min-h-screen lg:h-screen lg:grid-cols-[224px_minmax(0,1fr)] ${view === "chat" ? "xl:grid-cols-[224px_minmax(0,1fr)_288px]" : ""}`}>
         <aside className="hidden border-r border-ink/10 bg-[#e9e5dc] px-4 py-5 lg:flex lg:flex-col">
           <div className="flex items-center gap-3 px-2">
             <div className="grid size-9 place-items-center rounded-xl bg-ink text-sm font-bold text-paper">栖</div>
             <div><p className="font-semibold tracking-tight">栖岸商店</p><p className="text-[10px] tracking-[0.15em] text-ink/45 uppercase">Service desk</p></div>
           </div>
-          <button onClick={resetChat} className="mt-8 flex w-full items-center justify-center gap-2 rounded-xl bg-ink px-3 py-2.5 text-sm font-medium text-white hover:bg-ink/90">
+          <button onClick={() => void resetChat()} className="mt-8 flex w-full items-center justify-center gap-2 rounded-xl bg-ink px-3 py-2.5 text-sm font-medium text-white hover:bg-ink/90">
             <Plus size={16} /> 新建会话
           </button>
           <nav className="mt-5 space-y-1 text-sm">
-            <a className="flex items-center gap-3 rounded-xl bg-white/80 px-3 py-2.5 font-medium shadow-sm" href="#"><MessageSquareText size={17} />在线客服</a>
-            <a className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-ink/55 hover:bg-white/50" href="#"><Inbox size={17} />待处理</a>
-            <a className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-ink/55 hover:bg-white/50" href="#"><TicketCheck size={17} />服务记录</a>
-            <a className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-ink/55 hover:bg-white/50" href="#"><LayoutGrid size={17} />知识库</a>
+            <button onClick={() => setView("chat")} className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left ${view === "chat" ? "bg-white/80 font-medium shadow-sm" : "text-ink/55 hover:bg-white/50"}`}><MessageSquareText size={17} />在线客服</button>
+            <button onClick={() => setView("knowledge")} className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left ${view === "knowledge" ? "bg-white/80 font-medium shadow-sm" : "text-ink/55 hover:bg-white/50"}`}><LayoutGrid size={17} />知识库</button>
           </nav>
-          <div className="mt-auto rounded-2xl border border-ink/10 bg-white/55 p-4">
+          <ConversationList
+            conversations={conversations}
+            activeId={session.thread}
+            loading={historyLoading}
+            onOpen={(threadId) => void openConversation(threadId)}
+            onRename={renameHistory}
+            onDelete={deleteHistory}
+          />
+          <div className="mt-4 rounded-2xl border border-ink/10 bg-white/55 p-4">
             <Headphones size={18} className="text-accent" />
             <p className="mt-3 text-xs font-semibold">服务时间</p>
             <p className="mt-1 text-xs leading-5 text-ink/50">周一至周日<br />09:00 — 22:00</p>
@@ -113,12 +242,29 @@ export default function App() {
         </aside>
 
         <main className="flex min-h-screen min-w-0 flex-col lg:min-h-0">
+          {view === "knowledge" ? (
+            <KnowledgeManager onBack={() => setView("chat")} />
+          ) : (
+            <>
           <header className="flex h-[72px] shrink-0 items-center justify-between border-b border-ink/8 bg-paper/90 px-4 backdrop-blur sm:px-7">
             <div className="flex items-center gap-3">
               <div className="grid size-9 place-items-center rounded-xl bg-ink text-sm font-bold text-paper lg:hidden">栖</div>
               <div><h1 className="font-semibold tracking-tight">在线客服</h1><p className="text-xs text-ink/45">订单、物流与售后咨询</p></div>
             </div>
-            <StatusBadge online={online} />
+            <div className="flex items-center gap-2">
+              {conversations.length > 0 && (
+                <select
+                  aria-label="切换历史会话"
+                  value={session.thread}
+                  onChange={(event) => void openConversation(event.target.value)}
+                  className="max-w-32 rounded-lg border border-ink/10 bg-white px-2 py-1.5 text-xs outline-none lg:hidden"
+                >
+                  {!conversations.some((item) => item.id === session.thread) && <option value={session.thread}>当前会话</option>}
+                  {conversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}
+                </select>
+              )}
+              <button onClick={() => setView("knowledge")} className="rounded-lg border border-ink/10 bg-white px-3 py-1.5 text-xs lg:hidden">知识库</button><StatusBadge online={online} />
+            </div>
           </header>
 
           <div className="chat-grid flex-1 overflow-y-auto px-4 py-7 sm:px-7">
@@ -133,10 +279,12 @@ export default function App() {
               <div ref={endRef} />
             </div>
           </div>
-          <Composer value={input} loading={loading} disabled={loading} onChange={setInput} onSend={() => void submit(input)} />
+          <Composer value={input} loading={loading} disabled={loading || historyLoading} onChange={setInput} onSend={() => void submit(input)} />
+            </>
+          )}
         </main>
 
-        <aside className="hidden overflow-y-auto border-l border-ink/10 bg-[#f8f6f1] px-5 py-6 xl:block">
+        {view === "chat" && <aside className="hidden overflow-y-auto border-l border-ink/10 bg-[#f8f6f1] px-5 py-6 xl:block">
           <div className="flex items-center justify-between"><div><p className="text-[11px] font-semibold tracking-[0.14em] text-ink/40 uppercase">快捷查询</p><h2 className="mt-1 font-semibold">演示订单</h2></div><PackageSearch size={20} className="text-accent" /></div>
           <div className="mt-5 space-y-2.5">
             {quickOrders.map((order) => (
@@ -156,7 +304,7 @@ export default function App() {
             </div>
           </div>
           <div className="mt-6 border-t border-ink/8 pt-5 text-[11px] leading-5 text-ink/40"><p>客服由本地专属模型提供支持</p><p>物流信息来自演示数据服务</p></div>
-        </aside>
+        </aside>}
       </div>
     </div>
   );

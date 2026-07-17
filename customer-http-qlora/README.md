@@ -65,7 +65,9 @@ Invoke-RestMethod `
 
 ## OpenAI 兼容接口
 
-接口地址为 `POST /v1/chat/completions`，请求支持 `messages`、`temperature`、`top_p`、OpenAI 风格的 `max_tokens`，也兼容 `max_new_tokens`。接口支持 `tools`、`tool_choice`、`tool_calls` 和 `tool` 消息，可供 Mastra 等 Agent 框架执行本地工具。当前版本仅支持非流式调用，`stream=true` 会返回 400。
+接口地址为 `POST /v1/chat/completions`，请求支持 `messages`、`temperature`、`top_p`、OpenAI 风格的 `max_tokens`，也兼容 `max_new_tokens`。接口支持 `tools`、`tool_choice`、`tool_calls` 和 `tool` 消息，可供 Mastra 等 Agent 框架执行本地工具。
+
+`stream=true` 会返回 OpenAI 兼容的 SSE `chat.completion.chunk` 事件，并以 `data: [DONE]` 结束；同时支持 `stream_options.include_usage`。当前实现先完成一次 GPU 推理，再将结果分片输出，因此兼容 Mastra Studio 的流式协议，但暂不缩短首个 Token 的等待时间。
 
 ## API Key
 

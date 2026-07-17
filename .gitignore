@@ -27,6 +27,11 @@ models/
 venv/
 env/
 
+# Local RAG and agent runtime state
+.mastra/
+.data/
+.cache/
+
 # Vendored training framework source
 **/LLaMA-Factory/
 

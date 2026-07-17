@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 import uuid
 from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 
 from .config import Settings
 from .model_service import ModelService
@@ -78,6 +81,82 @@ def create_app(
         except RuntimeError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
 
+    async def openai_stream_events(
+        *,
+        completion_id: str,
+        created: int,
+        model_name: str,
+        result,
+        include_usage: bool,
+    ) -> AsyncIterator[str]:
+        def event(payload: dict) -> str:
+            return f"data: {json.dumps(payload, ensure_ascii=False, separators=(',', ':'))}\n\n"
+
+        base = {
+            "id": completion_id,
+            "object": "chat.completion.chunk",
+            "created": created,
+            "model": model_name,
+        }
+        yield event({
+            **base,
+            "choices": [{
+                "index": 0,
+                "delta": {"role": "assistant", "content": ""},
+                "finish_reason": None,
+            }],
+        })
+
+        # Generation is currently completed in the worker thread first. Sending
+        # small SSE chunks keeps the endpoint OpenAI-compatible and allows Mastra
+        # Studio to consume it without changing the GPU generation path.
+        for start in range(0, len(result.text), 24):
+            yield event({
+                **base,
+                "choices": [{
+                    "index": 0,
+                    "delta": {"content": result.text[start:start + 24]},
+                    "finish_reason": None,
+                }],
+            })
+            await asyncio.sleep(0)
+
+        for index, tool_call in enumerate(result.tool_calls or []):
+            yield event({
+                **base,
+                "choices": [{
+                    "index": 0,
+                    "delta": {
+                        "tool_calls": [{
+                            "index": index,
+                            "id": tool_call.id,
+                            "type": tool_call.type,
+                            "function": {
+                                "name": tool_call.function.name,
+                                "arguments": tool_call.function.arguments,
+                            },
+                        }],
+                    },
+                    "finish_reason": None,
+                }],
+            })
+
+        yield event({
+            **base,
+            "choices": [{
+                "index": 0,
+                "delta": {},
+                "finish_reason": "tool_calls" if result.tool_calls else "stop",
+            }],
+        })
+        if include_usage:
+            yield event({
+                **base,
+                "choices": [],
+                "usage": result.usage.model_dump(),
+            })
+        yield "data: [DONE]\n\n"
+
     @app.get("/health", tags=["system"])
     def health() -> dict[str, str]:
         return {"status": "ok"}
@@ -110,19 +189,36 @@ def create_app(
     async def openai_chat(
         body: OpenAIChatRequest,
         service: ModelService = Depends(get_service),
-    ) -> OpenAIChatResponse:
-        if body.stream:
-            raise HTTPException(status_code=400, detail="当前版本暂不支持 stream=true")
+    ):
         result = await run_generation(body, service)
         model_name = body.model or "customer-service-qwen3-8b-qlora"
+        completion_id = f"chatcmpl-{uuid.uuid4().hex}"
+        created = int(time.time())
+        if body.stream:
+            include_usage = bool((body.stream_options or {}).get("include_usage"))
+            return StreamingResponse(
+                openai_stream_events(
+                    completion_id=completion_id,
+                    created=created,
+                    model_name=model_name,
+                    result=result,
+                    include_usage=include_usage,
+                ),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                    "X-Accel-Buffering": "no",
+                },
+            )
         assistant_message = Message(
             role="assistant",
             content=result.text or None,
             tool_calls=result.tool_calls,
         )
         return OpenAIChatResponse(
-            id=f"chatcmpl-{uuid.uuid4().hex}",
-            created=int(time.time()),
+            id=completion_id,
+            created=created,
             model=model_name,
             choices=[OpenAIChoice(
                 message=assistant_message,
