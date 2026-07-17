@@ -1,0 +1,8 @@
+packages:
+  - customer-agents
+  - customer-frontend
+  - customer-frontend-logistics-api
+
+onlyBuiltDependencies:
+  - "@swc/core"
+  - esbuild

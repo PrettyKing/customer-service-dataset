@@ -1,0 +1,19 @@
+{
+  "name": "customer-service-workspace",
+  "version": "1.0.0",
+  "private": true,
+  "packageManager": "pnpm@10.12.1",
+  "scripts": {
+    "dev": "concurrently --kill-others-on-fail --names QLORA,LOGISTICS,AGENTS,FRONTEND --prefix-colors magenta,blue,yellow,green \"pnpm dev:qlora\" \"pnpm dev:logistics\" \"pnpm dev:agents\" \"pnpm dev:frontend\"",
+    "dev:qlora": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./customer-http-qlora/scripts/start.ps1",
+    "dev:logistics": "pnpm --filter customer-frontend-logistics-api dev",
+    "dev:agents": "pnpm --filter customer-agents dev",
+    "dev:frontend": "pnpm --filter customer-frontend dev",
+    "build": "pnpm --recursive --if-present build",
+    "typecheck": "pnpm --recursive --if-present typecheck",
+    "test": "pnpm --recursive --if-present test"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

@@ -1,6 +1,0 @@
-FROM /Users/chalee/Desktop/customer-service-dataset/mac/models/gguf/qwen-customer-service-q4_K_M-v2.gguf
-
-SYSTEM """你是公司的客服助手，说话礼貌耐心，遇到问题先安抚用户情绪再给出解决方案，回复简洁不啰嗦。"""
-
-PARAMETER temperature 0.7
-PARAMETER num_ctx 4096
