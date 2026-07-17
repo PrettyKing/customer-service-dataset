@@ -4,6 +4,11 @@
 
 ## 系统架构
 
+![中文客服 QLoRA 全栈系统架构](./customer-service-system-architecture.png)
+
+<details>
+<summary>查看可编辑的 Mermaid 架构图</summary>
+
 ```mermaid
 flowchart LR
     User([客服用户]) --> Web
@@ -70,6 +75,8 @@ flowchart LR
     class LogisticsTool,KnowledgeTool,Logistics tool;
     class LibSQL,Qdrant database;
 ```
+
+</details>
 
 对话请求只提交本轮用户消息以及稳定的 `resource/thread` 标识。Mastra 从 LibSQL 恢复最近 20 条消息后调用模型；物流问题调用 Mock Tool，政策和商品知识问题调用 RAG Tool。前端的知识库页面则直接调用 RAG API 完成文档管理。
 
