@@ -39,9 +39,20 @@ runs/
 # Exported and quantized model files
 *.gguf
 
-# Fused full-model directories
+# Full model artifacts, including MLX fused models and GGUF exports
+mac/models/
+
+# Local third-party conversion/build tool
+mac/llama.cpp/
+
+# New local adapter training runs
+mac/training/adapters-v*/
+
+# Legacy root-level model artifact paths
 qwen-customer-service-merged/
 qwen-customer-service-merged-f16/
+qwen-customer-service-f16.gguf
+qwen-customer-service-q4_K_M.gguf
 
 # Python and training caches
 __pycache__/
