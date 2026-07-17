@@ -1,0 +1,29 @@
+{
+    "customer_service_train": {
+      "file_name": "customer_service_train.json",
+      "columns": {
+        "prompt": "instruction",
+        "query": "input",
+        "response": "output",
+        "system": "system"
+      }
+    },
+    "customer_service_demo": {
+      "file_name": "customer_service_demo.json",
+      "columns": {
+        "prompt": "instruction",
+        "query": "input",
+        "response": "output",
+        "system": "system"
+      }
+    },
+    "customer_service_mock": {
+      "file_name": "customer_service_mock.json",
+      "columns": {
+        "prompt": "instruction",
+        "query": "input",
+        "response": "output",
+        "system": "system"
+      }
+    }
+  }

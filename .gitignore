@@ -1,6 +1,41 @@
 # macOS
 .DS_Store
 
+# IDE and local workspace settings
+.vscode/
+.idea/
+*.code-workspace
+
+# Local secrets and environment overrides
+.env
+.env.*
+!.env.example
+
+# Downloaded base models and archives (currently ~27 GB)
+models/
+*.zip
+*.7z
+*.tar
+*.tar.gz
+
+# Python virtual environments
+.venv/
+venv/
+env/
+
+# Vendored training framework source
+**/LLaMA-Factory/
+
+# Training outputs, checkpoints and experiment trackers
+**/outputs/
+**/saves/
+checkpoint-*/
+wandb/
+runs/
+*.pt
+*.pth
+*.ckpt
+
 # Exported and quantized model files
 *.gguf
 
@@ -12,8 +47,17 @@ qwen-customer-service-merged-f16/
 __pycache__/
 *.py[cod]
 .cache/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
 
 # Logs and temporary files
 *.log
+*.jsonl.lock
 *.tmp
 *.swp
+*.bak
+Thumbs.db

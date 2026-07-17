@@ -1,0 +1,8 @@
+# Local training runtime. Root .gitignore also covers these paths.
+.venv/
+LLaMA-Factory/
+outputs/
+
+# Python caches
+__pycache__/
+*.py[cod]
