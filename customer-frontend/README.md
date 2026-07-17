@@ -81,6 +81,8 @@ pnpm run dev
 
 生产部署时，反向代理需要分别转发 Mastra 的内置 `/api` 路由和不带 `/api` 前缀的自定义会话路由。
 
+通过 FRP 等工具使用普通 HTTP 暴露页面时，浏览器可能不提供安全上下文中的 `crypto.randomUUID()`。前端已内置 `getRandomValues` 和兼容性降级方案用于匿名会话 ID；正式公网部署仍建议配置 HTTPS，避免其他浏览器能力受限。
+
 ## 校验与构建
 
 ```powershell

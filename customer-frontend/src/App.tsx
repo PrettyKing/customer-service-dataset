@@ -7,6 +7,7 @@ import { KnowledgeManager } from "./components/KnowledgeManager";
 import { MessageBubble } from "./components/MessageBubble";
 import { StatusBadge } from "./components/StatusBadge";
 import { createConversation, deleteConversation, getConversation, listConversations, renameConversation } from "./lib/conversations";
+import { createClientId } from "./lib/id";
 import { checkAgent, sendToAgent } from "./lib/mastra";
 import type { ChatMessage, ConversationDetail, ConversationSummary } from "./types";
 
@@ -26,19 +27,19 @@ const quickOrders = [
 ];
 
 function createMessage(role: "user" | "assistant", content: string): ChatMessage {
-  return { id: crypto.randomUUID(), role, content, createdAt: new Date() };
+  return { id: createClientId(), role, content, createdAt: new Date() };
 }
 
 function persistentId(key: string): string {
   const existing = window.localStorage.getItem(key);
   if (existing) return existing;
-  const value = crypto.randomUUID();
+  const value = createClientId();
   window.localStorage.setItem(key, value);
   return value;
 }
 
 function welcomeMessage(): ChatMessage {
-  return { ...starterMessage, id: crypto.randomUUID(), createdAt: new Date() };
+  return { ...starterMessage, id: createClientId(), createdAt: new Date() };
 }
 
 function restoredMessages(detail: ConversationDetail): ChatMessage[] {
@@ -176,7 +177,7 @@ export default function App() {
     controllerRef.current?.abort();
     setInput("");
     setLoading(false);
-    let thread: string = crypto.randomUUID();
+    let thread = createClientId();
     try {
       const created = await createConversation(session.resource, { threadId: thread });
       thread = created.id;
@@ -203,7 +204,7 @@ export default function App() {
     if (remaining.length) {
       await openConversation(remaining[0].id);
     } else {
-      const thread = crypto.randomUUID();
+      const thread = createClientId();
       window.localStorage.setItem("customer-service-thread", thread);
       setSession((current) => ({ ...current, thread }));
       setMessages([welcomeMessage()]);
